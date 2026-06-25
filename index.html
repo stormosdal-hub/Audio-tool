@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conga Transient Grapher</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▦</span>
+      <div>
+        <h1>Conga Transient Grapher</h1>
+        <p class="tagline">Live multi-lane pitch-band stroke visualizer</p>
+      </div>
+    </div>
+
+    <div class="transport">
+      <label class="field">
+        <span>Microphone</span>
+        <select id="device" title="Audio input device"></select>
+      </label>
+      <button id="refreshDevices" class="icon-btn" title="Refresh device list">⟳</button>
+      <button id="startBtn" class="primary">▶ Start</button>
+      <button id="recBtn" class="ghost" title="Record raw audio to a file" disabled>● Rec</button>
+      <div class="status">
+        <span id="statusDot" class="dot"></span>
+        <span id="status">idle</span>
+        <span id="sampleRate" class="muted"></span>
+      </div>
+    </div>
+  </header>
+
+  <section class="controls">
+    <div class="control-group">
+      <button id="addLane" class="primary-outline">＋ Add lane</button>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="control-group right">
+      <label class="field inline">
+        <span>Zoom</span>
+        <input id="pps" type="range" min="20" max="600" step="10" value="140" />
+        <span id="ppsVal" class="muted">140 px/s</span>
+      </label>
+      <label class="field inline">
+        <span>FFT</span>
+        <select id="fft">
+          <option value="2048">2048</option>
+          <option value="4096" selected>4096</option>
+          <option value="8192">8192</option>
+          <option value="16384">16384</option>
+        </select>
+      </label>
+      <button id="freezeBtn" class="ghost" title="Freeze the timelines to inspect">⏸ Freeze</button>
+      <button id="clearBtn" class="ghost" title="Clear all history and counts">⌫ Clear</button>
+    </div>
+  </section>
+
+  <section class="spectro-wrap panel">
+    <div class="panel-head">
+      <h2>Spectrogram</h2>
+      <span class="hint" id="specHint">Drag vertically over the spectrogram to create a lane for that pitch band</span>
+    </div>
+    <div class="spectro-stack">
+      <canvas id="spectro"></canvas>
+      <canvas id="spectroOverlay"></canvas>
+    </div>
+  </section>
+
+  <section class="timeline-area panel">
+    <canvas id="ruler" class="ruler"></canvas>
+    <div id="lanes" class="lanes"></div>
+    <div id="emptyHint" class="empty-hint">
+      No lanes yet. Click <strong>Add lane</strong> or a preset above, then press <strong>Start</strong>.
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span>Runs fully offline in your browser · nothing is uploaded.</span>
+    <a href="README.md" target="_blank">How it works</a>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
