@@ -29,8 +29,9 @@ export class Lane {
     this.id = cfg.id;
     this.name = cfg.name;
     this.color = cfg.color;
-    this.minHz = cfg.minHz;
-    this.maxHz = cfg.maxHz;
+    this.minHz = 1;
+    this.maxHz = 2;
+    this.setBand(cfg.minHz, cfg.maxHz); // normalize inverted/out-of-range bands
     this.sensitivity = cfg.sensitivity ?? 55; // 0..100
     this.gainDb = cfg.gainDb ?? 0;
     this.muted = false;
@@ -45,6 +46,7 @@ export class Lane {
     this.lastOnsetT = -1;
     this.onsetCount = 0;
     this.lastIntervalMs = 0;
+    this._wasAbove = false; // edge-trigger state
     this._litUntil = -1;
 
     this.canvas = null;
@@ -69,6 +71,8 @@ export class Lane {
     this.lastOnsetT = -1;
     this.onsetCount = 0;
     this.lastIntervalMs = 0;
+    this._wasAbove = false;
+    this._litUntil = -1;
   }
 
   // Called once per audio frame with the shared analysis data.
@@ -95,37 +99,40 @@ export class Lane {
     const db = 20 * Math.log10(avgMag + 1e-12) + this.gainDb;
     const level = clamp((db - DISPLAY_DB_FLOOR) / (DISPLAY_DB_CEIL - DISPLAY_DB_FLOOR), 0, 1);
 
-    // --- Onset detection ---
+    // --- Onset detection (edge-triggered energy envelope) ---
+    // fast = attack envelope; slow = adaptive baseline. We fire on the RISING
+    // EDGE of "fast clears riseRatio × baseline", so a sustained or ringing note
+    // produces ONE onset instead of re-firing every refractory period. The
+    // baseline adapts asymmetrically (4× slower while rising) so it never
+    // chases the transient and masks it.
     this.fast += FAST_A * (energy - this.fast);
     if (this.warm < WARMUP_FRAMES) {
+      // Seed the baseline with a clean running mean during warm-up (only one
+      // update per frame — no asymmetric EMA on top).
       this.slow = (this.slow * this.warm + energy) / (this.warm + 1);
       this.warm++;
+    } else {
+      const a = energy > this.slow ? SLOW_A * 0.25 : SLOW_A;
+      this.slow += a * (energy - this.slow);
     }
 
     const sens = this.sensitivity / 100;          // 0..1
     const riseRatio = 2.6 - 1.4 * sens;           // ~2.6 (picky) .. ~1.2 (eager); default ≈1.8
+    const above =
+      this.fast > ABS_FLOOR && this.fast > riseRatio * Math.max(this.slow, ABS_FLOOR);
+
     const tms = frame.t * 1000;
     const primed = tms - this.lastOnsetT > REFRACTORY_MS;
 
     let onset = false;
-    if (
-      !this.muted &&
-      this.warm >= WARMUP_FRAMES &&
-      this.fast > ABS_FLOOR &&
-      this.fast > riseRatio * Math.max(this.slow, ABS_FLOOR) &&
-      primed
-    ) {
+    if (!this.muted && this.warm >= WARMUP_FRAMES && above && !this._wasAbove && primed) {
       onset = true;
       if (this.lastOnsetT > 0) this.lastIntervalMs = tms - this.lastOnsetT;
       this.lastOnsetT = tms;
       this.onsetCount++;
       this._litUntil = frame.t + 0.12;
     }
-
-    // Asymmetric baseline: adapt 4x slower while rising so it doesn't chase the
-    // transient and self-mask the onset.
-    const a = energy > this.slow ? SLOW_A * 0.25 : SLOW_A;
-    this.slow += a * (energy - this.slow);
+    this._wasAbove = above;
 
     this.history.push({ t: frame.t, level, db, onset });
 

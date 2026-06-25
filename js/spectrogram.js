@@ -65,10 +65,21 @@ export class Spectrogram {
     const bw = Math.max(1, Math.round(cw * dpr));
     const bh = Math.max(1, Math.round(ch * dpr));
     if (this.canvas.width !== bw || this.canvas.height !== bh) {
+      // Preserve the existing history across a resize (best effort: stretch the
+      // old backing store into the new size) so the spectrogram doesn't blank
+      // out while the lanes keep their history.
+      let snap = null;
+      if (this.canvas.width > 0 && this.canvas.height > 0) {
+        snap = document.createElement("canvas");
+        snap.width = this.canvas.width;
+        snap.height = this.canvas.height;
+        snap.getContext("2d").drawImage(this.canvas, 0, 0);
+      }
       this.canvas.width = bw;
       this.canvas.height = bh;
       this.ctx.fillStyle = "#06090d";
       this.ctx.fillRect(0, 0, bw, bh);
+      if (snap) this.ctx.drawImage(snap, 0, 0, snap.width, snap.height, 0, 0, bw, bh);
       this._binLo = null;
     }
   }
@@ -112,17 +123,18 @@ export class Spectrogram {
     this._rebuildBins(frame.binHz, Hd, lin.length);
 
     if (this._lastT < 0) { this._lastT = frame.t; return; }
-    const dt = frame.t - this._lastT;
+    let dt = frame.t - this._lastT;
     this._lastT = frame.t;
     if (dt <= 0) return;
+    if (dt > 0.25) dt = 0.25; // tab was backgrounded: cap the catch-up scroll
 
     // Scroll in device px; lock to lane pps (CSS px/s * dpr) so the time axis
     // matches the lanes. Only shift whole device pixels (accumulate remainder).
     this._scrollAccum += pps * this.dpr * dt;
     let cols = Math.floor(this._scrollAccum);
     if (cols < 1) return;
-    if (cols > Wd) cols = Wd;
-    this._scrollAccum -= cols;
+    if (cols >= Wd) { cols = Wd; this._scrollAccum = 0; }
+    else this._scrollAccum -= cols;
 
     const ctx = this.ctx;
     ctx.drawImage(this.canvas, cols, 0, Wd - cols, Hd, 0, 0, Wd - cols, Hd);

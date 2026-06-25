@@ -31,6 +31,25 @@ function currentNow() {
   return 0;
 }
 
+function updateFreezeBtn() {
+  const btn = $("freezeBtn");
+  btn.classList.toggle("active", state.frozen);
+  btn.textContent = state.frozen ? "▶ Resume" : "⏸ Freeze";
+}
+
+function clearFreeze() {
+  state.frozen = false;
+  if (spectro) spectro._lastT = -1;
+  updateFreezeBtn();
+}
+
+function setRecUI(on) {
+  const btn = $("recBtn");
+  btn.classList.toggle("recording", on);
+  btn.textContent = on ? "■ Stop rec" : "● Rec";
+  $("statusDot").className = on ? "dot rec" : (state.running ? "dot live" : "dot");
+}
+
 function save() {
   const data = {
     lanes: state.lanes.map((l) => l.toJSON()),
@@ -237,11 +256,12 @@ async function refreshDevices() {
 // ------------------------------------------------------------------ transport
 async function start() {
   try {
+    clearFreeze(); // never start up in a stale frozen state
     setStatus("requesting mic…");
     state.deviceId = $("device").value || null;
     await engine.start(state.deviceId);
     state.running = true;
-    await refreshDevices(); // labels now available
+    try { await refreshDevices(); } catch (e) { /* labels are a nice-to-have */ }
     $("device").value = engine.deviceId || state.deviceId || "";
     $("startBtn").textContent = "■ Stop";
     $("startBtn").classList.remove("primary");
@@ -253,8 +273,9 @@ async function start() {
     save();
   } catch (e) {
     console.error(e);
-    setStatus("mic error: " + (e.name || e.message));
+    engine.stop(); // keep engine state and the UI in agreement on failure
     state.running = false;
+    setStatus("mic error: " + (e.name || e.message));
   }
 }
 
@@ -268,6 +289,7 @@ function stop() {
   $("recBtn").classList.remove("recording");
   $("recBtn").textContent = "● Rec";
   $("statusDot").className = "dot";
+  clearFreeze(); // don't leave the app frozen for the next Start
   setStatus("stopped");
 }
 
@@ -319,9 +341,18 @@ function init() {
     state.deviceId = $("device").value || null;
     save();
     if (state.running) {
+      // Stopping the old stream's tracks would auto-stop an in-progress
+      // recording; flush it to disk first and reset the rec UI.
+      if (engine.isRecording()) { engine.stopRecording(); setRecUI(false); }
       setStatus("switching device…");
-      try { await engine.switchDevice(state.deviceId); setStatus("listening"); }
-      catch (e) { setStatus("device error"); }
+      try {
+        await engine.switchDevice(state.deviceId);
+        // Reflect the device actually opened (may differ after a fallback).
+        state.deviceId = engine.deviceId;
+        $("device").value = engine.deviceId || "";
+        save();
+        setStatus("listening");
+      } catch (e) { setStatus("device error"); }
     }
   });
   $("addLane").addEventListener("click", () =>
@@ -338,32 +369,22 @@ function init() {
     save();
   });
   $("freezeBtn").addEventListener("click", () => {
-    state.frozen = !state.frozen;
-    const btn = $("freezeBtn");
-    btn.classList.toggle("active", state.frozen);
-    if (state.frozen) {
-      state.freezeT = currentNow();
-      btn.textContent = "▶ Resume";
+    if (!state.frozen) {
+      state.freezeT = currentNow(); // capture live time BEFORE flipping the flag
+      state.frozen = true;
     } else {
+      state.frozen = false;
       spectro._lastT = -1; // avoid a huge scroll jump on resume
-      btn.textContent = "⏸ Freeze";
     }
+    updateFreezeBtn();
   });
   $("clearBtn").addEventListener("click", () => {
     state.lanes.forEach((l) => l.clear());
     spectro.clear();
   });
   $("recBtn").addEventListener("click", () => {
-    if (engine.isRecording()) {
-      engine.stopRecording();
-      $("recBtn").classList.remove("recording");
-      $("recBtn").textContent = "● Rec";
-      $("statusDot").className = "dot live";
-    } else if (engine.startRecording()) {
-      $("recBtn").classList.add("recording");
-      $("recBtn").textContent = "■ Stop rec";
-      $("statusDot").className = "dot rec";
-    }
+    if (engine.isRecording()) { engine.stopRecording(); setRecUI(false); }
+    else if (engine.startRecording()) setRecUI(true);
   });
 
   // audio frames -> analysis

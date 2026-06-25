@@ -19,6 +19,7 @@ export class AudioEngine {
     this.deviceId = null;
 
     this._raf = 0;
+    this._resuming = false;
     this._listeners = new Set();
 
     this.recorder = null;
@@ -139,6 +140,18 @@ export class AudioEngine {
     const tick = () => {
       if (!this.running) return;
 
+      // Self-heal if the context was auto-suspended (mobile backgrounding,
+      // audio-focus loss): skip analysis this frame and try to resume, instead
+      // of reading stale/frozen data off a suspended context.
+      if (this.ctx.state !== "running") {
+        if (!this._resuming) {
+          this._resuming = true;
+          this.ctx.resume().catch(() => {}).finally(() => { this._resuming = false; });
+        }
+        this._raf = requestAnimationFrame(tick);
+        return;
+      }
+
       this.analyser.getFloatFrequencyData(this.freqDb);
 
       // Swap buffers so prevLin holds last frame, then fill freqLin from dB.
@@ -177,6 +190,8 @@ export class AudioEngine {
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null;
     if (this.source) { this.source.disconnect(); this.source = null; }
+    // Release the audio hardware while idle; start() resumes it again.
+    if (this.ctx && this.ctx.state === "running") this.ctx.suspend().catch(() => {});
   }
 
   // ---- Raw recording (WebM/Opus or whatever the browser supports) ----
@@ -184,38 +199,46 @@ export class AudioEngine {
 
   startRecording() {
     if (!this.stream || this.isRecording()) return false;
-    this._recChunks = [];
+    const chunks = [];
+    this._recChunks = chunks;
     let mime = "";
     for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"]) {
       if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
     }
+    let rec;
     try {
-      this.recorder = mime ? new MediaRecorder(this.stream, { mimeType: mime })
-                           : new MediaRecorder(this.stream);
+      rec = mime ? new MediaRecorder(this.stream, { mimeType: mime })
+                 : new MediaRecorder(this.stream);
     } catch (e) {
       return false;
     }
-    this.recorder.ondataavailable = (e) => { if (e.data.size) this._recChunks.push(e.data); };
-    this.recorder.start();
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    // Wire the download at creation time so it fires no matter WHY the recorder
+    // stops — including the browser auto-stopping it when the source tracks end
+    // (e.g. switching input device mid-recording). Otherwise the buffered audio
+    // would be silently discarded.
+    rec.onstop = () => {
+      if (this.recorder === rec) this.recorder = null;
+      if (!chunks.length) return;
+      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const ext = (rec.mimeType || "webm").includes("ogg") ? "ogg" : "webm";
+      a.href = url;
+      a.download = `conga-recording.${ext}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    };
+    this.recorder = rec;
+    rec.start();
     return true;
   }
 
   stopRecording() {
-    if (!this.recorder) return;
     const rec = this.recorder;
-    this.recorder = null;
-    if (rec.state !== "inactive") {
-      rec.onstop = () => {
-        const blob = new Blob(this._recChunks, { type: rec.mimeType || "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        const ext = (rec.mimeType || "webm").includes("ogg") ? "ogg" : "webm";
-        a.href = url;
-        a.download = `conga-recording.${ext}`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
-      };
-      rec.stop();
-    }
+    if (!rec) return;
+    // onstop (wired in startRecording) performs the download.
+    if (rec.state === "recording") rec.stop();
+    else this.recorder = null;
   }
 }
