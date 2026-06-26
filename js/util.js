@@ -5,6 +5,21 @@ export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export const dbToLin = (db) => Math.pow(10, db / 20);
 export const linToDb = (l) => 20 * Math.log10(l + 1e-12);
 
+// Magnitude-weighted spectral centroid (in Hz) over [floorHz, nyquist].
+// This is the "brightness" of the frame: sharp transients (slap, hi-hat, clave)
+// push it high; deep boomy tones keep it low. Returns 0 for a silent frame.
+export function spectralCentroid(freqLin, binHz, floorHz = 40) {
+  const i0 = Math.max(1, Math.round(floorHz / binHz));
+  let num = 0;
+  let den = 0;
+  for (let i = i0; i < freqLin.length; i++) {
+    const m = freqLin[i];
+    num += m * (i * binHz);
+    den += m;
+  }
+  return den > 1e-9 ? num / den : 0;
+}
+
 // Left padding (px) reserved inside every timeline canvas for axis labels.
 // Shared by the spectrogram, ruler and lanes so their time axes line up.
 export const PAD_LEFT = 50;

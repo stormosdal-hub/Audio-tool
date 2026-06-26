@@ -78,6 +78,11 @@ function addLane(cfg) {
     maxHz: cfg.maxHz,
     sensitivity: cfg.sensitivity,
     gainDb: cfg.gainDb,
+    attackMs: cfg.attackMs,
+    releaseMs: cfg.releaseMs,
+    refractoryMs: cfg.refractoryMs,
+    centroidMinHz: cfg.centroidMinHz,
+    centroidMaxHz: cfg.centroidMaxHz,
   });
   buildLaneDom(lane);
   engine.replayHistory(lane);
@@ -86,6 +91,15 @@ function addLane(cfg) {
   updateEmptyHint();
   save();
   return lane;
+}
+
+// Re-derive a lane's whole timeline from the engine's stored raw spectra. Call
+// this after any change to detection params (band, envelope, centroid gate) so
+// the envelope and onset markers reflect the new settings immediately, without
+// re-recording.
+function recomputeLane(lane) {
+  lane.clear();
+  engine.replayHistory(lane);
 }
 
 function removeLane(lane) {
@@ -119,15 +133,33 @@ function buildLaneDom(lane) {
       <div class="lane-stats">
         <span>hits <b class="lane-count">0</b></span>
         <span><b class="lane-bpm">–</b> bpm</span>
+        <button class="lane-btn lane-settings ghost" title="Advanced detection settings">⚙</button>
         <button class="lane-btn lane-mute ghost" title="Mute detection">Mute</button>
         <button class="lane-btn lane-remove ghost" title="Remove lane">✕</button>
       </div>
+    </div>
+    <div class="lane-adv hidden">
+      <div class="adv-group">
+        <span class="adv-title">Klangfilter · Spectral Centroid</span>
+        <label>min <input class="lane-cmin" type="number" min="0" max="20000" step="10" value="${Math.round(lane.centroidMinHz)}" /> Hz</label>
+        <label>max <input class="lane-cmax" type="number" min="0" max="20000" step="10" value="${Math.round(lane.centroidMaxHz)}" /> Hz</label>
+        <span class="adv-read">nå <b class="lane-cnow">–</b> · siste slag <b class="lane-clast">–</b></span>
+      </div>
+      <div class="adv-group">
+        <span class="adv-title">Envelope</span>
+        <label>attack <input class="lane-atk" type="range" min="1" max="200" step="1" value="${lane.attackMs}" /><b class="lane-atk-v">${lane.attackMs} ms</b></label>
+        <label>release <input class="lane-rel" type="range" min="1" max="500" step="1" value="${lane.releaseMs}" /><b class="lane-rel-v">${lane.releaseMs} ms</b></label>
+        <label>refractory <input class="lane-ref" type="range" min="20" max="500" step="5" value="${lane.refractoryMs}" /><b class="lane-ref-v">${lane.refractoryMs} ms</b></label>
+      </div>
+      <p class="adv-hint">Skarpe lyder (hi-hat, klave) har høy centroid (&gt;2 kHz) og kort attack/refractory. Dype congas har lav centroid (&lt;600 Hz) — sett <b>max</b> ned for å luke bort skarpe slag, og lengre release/refractory for boomy ettersving. 0 = ingen grense.</p>
     </div>
     <canvas class="lane-canvas"></canvas>
   `;
   lane._dom = el;
   lane._countEl = el.querySelector(".lane-count");
   lane._bpmEl = el.querySelector(".lane-bpm");
+  lane._cnowEl = el.querySelector(".lane-cnow");
+  lane._clastEl = el.querySelector(".lane-clast");
   lane.attachCanvas(el.querySelector(".lane-canvas"));
 
   const colorEl = el.querySelector(".lane-color");
@@ -149,8 +181,7 @@ function buildLaneDom(lane) {
     // Re-derive the whole timeline from the stored raw spectra so the envelope
     // and onset markers reflect the NEW band immediately — you can sweep the
     // frequency and watch which strokes light up without re-recording.
-    lane.clear();
-    engine.replayHistory(lane);
+    recomputeLane(lane);
     save();
   };
   minEl.addEventListener("change", applyBand);
@@ -163,6 +194,43 @@ function buildLaneDom(lane) {
     muteBtn.textContent = lane.muted ? "Muted" : "Mute";
   });
   el.querySelector(".lane-remove").addEventListener("click", () => removeLane(lane));
+
+  // ---- Advanced detection panel ----
+  const advEl = el.querySelector(".lane-adv");
+  const settingsBtn = el.querySelector(".lane-settings");
+  settingsBtn.addEventListener("click", () => {
+    const nowHidden = advEl.classList.toggle("hidden");
+    settingsBtn.classList.toggle("active", !nowHidden);
+  });
+
+  // Centroid gate (number inputs commit on change → recompute once).
+  const cminEl = el.querySelector(".lane-cmin");
+  const cmaxEl = el.querySelector(".lane-cmax");
+  const applyCentroid = () => {
+    lane.centroidMinHz = clamp(parseFloat(cminEl.value) || 0, 0, 20000);
+    lane.centroidMaxHz = clamp(parseFloat(cmaxEl.value) || 0, 0, 20000);
+    cminEl.value = Math.round(lane.centroidMinHz);
+    cmaxEl.value = Math.round(lane.centroidMaxHz);
+    recomputeLane(lane);
+    save();
+  };
+  cminEl.addEventListener("change", applyCentroid);
+  cmaxEl.addEventListener("change", applyCentroid);
+
+  // Envelope sliders: update the live param + label on every input (so live
+  // detection responds instantly), but only replay history on release (change),
+  // since replaying ~90 s of frames each input tick would be wasteful.
+  const wireKnob = (input, label, unit, set) => {
+    input.addEventListener("input", () => {
+      const v = +input.value;
+      set(v);
+      label.textContent = v + unit;
+    });
+    input.addEventListener("change", () => { recomputeLane(lane); save(); });
+  };
+  wireKnob(el.querySelector(".lane-atk"), el.querySelector(".lane-atk-v"), " ms", (v) => (lane.attackMs = v));
+  wireKnob(el.querySelector(".lane-rel"), el.querySelector(".lane-rel-v"), " ms", (v) => (lane.releaseMs = v));
+  wireKnob(el.querySelector(".lane-ref"), el.querySelector(".lane-ref-v"), " ms", (v) => (lane.refractoryMs = v));
 
   $("lanes").appendChild(el);
 }
@@ -201,6 +269,8 @@ function renderLoop() {
         const bpm = lane.lastIntervalMs > 0 ? Math.round(60000 / lane.lastIntervalMs) : 0;
         lane._bpmEl.textContent = bpm > 0 && bpm < 600 ? bpm : "–";
       }
+      if (lane._cnowEl) lane._cnowEl.textContent = lane.liveCentroid > 0 ? fmtHz(lane.liveCentroid) : "–";
+      if (lane._clastEl) lane._clastEl.textContent = lane.lastCentroid > 0 ? fmtHz(lane.lastCentroid) : "–";
     }
     if (scale) {
       $("scalePos").textContent = scale.positionLabel();

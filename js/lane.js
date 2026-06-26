@@ -11,18 +11,23 @@
 // ~80 ms refractory. The baseline updates ASYMMETRICALLY (much slower while
 // energy is rising) so it never chases the transient and masks the hit.
 
-import { clamp, fmtHz, PAD_LEFT } from "./util.js";
+import { clamp, fmtHz, spectralCentroid, PAD_LEFT } from "./util.js";
 
 const HISTORY_SEC = 90;        // how much past audio we keep for scroll-back
 const DISPLAY_DB_FLOOR = -95;  // bottom of the envelope's dB scale
 const DISPLAY_DB_CEIL = -10;   // top of the envelope's dB scale
 
 // Detector tunables.
-const FAST_A = 0.5;            // fast-envelope EMA coefficient
 const SLOW_A = 0.05;           // slow-baseline EMA coefficient (~0.3 s @60fps)
 const ABS_FLOOR = 1e-6;        // absolute power gate so silence can't ratio-trigger
-const REFRACTORY_MS = 80;      // debounce after a confirmed onset
 const WARMUP_FRAMES = 25;      // let the baseline settle before allowing fires
+
+// Envelope defaults (ms). The fast envelope is now a real time-constant follower
+// driven by the actual frame dt, with separate attack (rise) and release (fall)
+// so it can be matched to a sound's shape. ~25 ms ≈ the old per-frame 0.5 EMA.
+const DEF_ATTACK_MS = 25;
+const DEF_RELEASE_MS = 25;
+const DEF_REFRACTORY_MS = 80;  // debounce after a confirmed onset
 
 export class Lane {
   constructor(cfg) {
@@ -36,6 +41,15 @@ export class Lane {
     this.gainDb = cfg.gainDb ?? 0;
     this.muted = false;
 
+    // Advanced detection settings (all default to current behavior).
+    this.attackMs = cfg.attackMs ?? DEF_ATTACK_MS;
+    this.releaseMs = cfg.releaseMs ?? DEF_RELEASE_MS;
+    this.refractoryMs = cfg.refractoryMs ?? DEF_REFRACTORY_MS;
+    // Spectral-centroid (timbre) gate, in Hz. 0 = unbounded on that side, so the
+    // default 0/0 lets every onset through regardless of brightness.
+    this.centroidMinHz = cfg.centroidMinHz ?? 0;
+    this.centroidMaxHz = cfg.centroidMaxHz ?? 0;
+
     // bounded ring of { t, level(0..1), db, onset } in chronological order
     this.history = [];
 
@@ -48,6 +62,9 @@ export class Lane {
     this.lastIntervalMs = 0;
     this._wasAbove = false; // edge-trigger state
     this._litUntil = -1;
+    this._lastFrameT = -1;  // for real-time dt of the envelope follower
+    this.liveCentroid = 0;  // brightness of the most recent frame
+    this.lastCentroid = 0;  // brightness measured at the last accepted onset
 
     this.canvas = null;
     this.c2d = null;
@@ -73,6 +90,9 @@ export class Lane {
     this.lastIntervalMs = 0;
     this._wasAbove = false;
     this._litUntil = -1;
+    this._lastFrameT = -1;
+    this.liveCentroid = 0;
+    this.lastCentroid = 0;
   }
 
   // Called once per audio frame with the shared analysis data.
@@ -99,13 +119,31 @@ export class Lane {
     const db = 20 * Math.log10(avgMag + 1e-12) + this.gainDb;
     const level = clamp((db - DISPLAY_DB_FLOOR) / (DISPLAY_DB_CEIL - DISPLAY_DB_FLOOR), 0, 1);
 
+    // Spectral centroid (brightness) of the whole frame — band-independent, so
+    // we cache it on the frame to share across lanes and across replay passes.
+    let centroid = frame._centroid;
+    if (centroid === undefined) {
+      centroid = spectralCentroid(freqLin, binHz);
+      frame._centroid = centroid;
+    }
+    this.liveCentroid = centroid;
+
     // --- Onset detection (edge-triggered energy envelope) ---
     // fast = attack envelope; slow = adaptive baseline. We fire on the RISING
     // EDGE of "fast clears riseRatio × baseline", so a sustained or ringing note
     // produces ONE onset instead of re-firing every refractory period. The
     // baseline adapts asymmetrically (4× slower while rising) so it never
     // chases the transient and masks it.
-    this.fast += FAST_A * (energy - this.fast);
+    //
+    // The fast envelope is a real time-constant follower driven by the actual
+    // frame dt, with separate attack (rise) and release (fall) so its shape can
+    // be tuned per lane to the sound it watches.
+    const dt = this._lastFrameT >= 0 ? clamp(frame.t - this._lastFrameT, 1e-4, 0.1) : 1 / 60;
+    this._lastFrameT = frame.t;
+    const aAtk = 1 - Math.exp(-dt / Math.max(0.001, this.attackMs / 1000));
+    const aRel = 1 - Math.exp(-dt / Math.max(0.001, this.releaseMs / 1000));
+    const aFast = energy > this.fast ? aAtk : aRel;
+    this.fast += aFast * (energy - this.fast);
     if (this.warm < WARMUP_FRAMES) {
       // Seed the baseline with a clean running mean during warm-up (only one
       // update per frame — no asymmetric EMA on top).
@@ -122,14 +160,21 @@ export class Lane {
       this.fast > ABS_FLOOR && this.fast > riseRatio * Math.max(this.slow, ABS_FLOOR);
 
     const tms = frame.t * 1000;
-    const primed = tms - this.lastOnsetT > REFRACTORY_MS;
+    const primed = tms - this.lastOnsetT > this.refractoryMs;
+
+    // Timbre gate: only accept the hit if the frame's brightness (centroid) sits
+    // inside the configured window. 0 means "no limit" on that side.
+    const passCentroid =
+      (this.centroidMinHz <= 0 || centroid >= this.centroidMinHz) &&
+      (this.centroidMaxHz <= 0 || centroid <= this.centroidMaxHz);
 
     let onset = false;
-    if (!this.muted && this.warm >= WARMUP_FRAMES && above && !this._wasAbove && primed) {
+    if (!this.muted && this.warm >= WARMUP_FRAMES && above && !this._wasAbove && primed && passCentroid) {
       onset = true;
       if (this.lastOnsetT > 0) this.lastIntervalMs = tms - this.lastOnsetT;
       this.lastOnsetT = tms;
       this.onsetCount++;
+      this.lastCentroid = centroid;
       this._litUntil = frame.t + 0.12;
     }
     this._wasAbove = above;
@@ -259,6 +304,9 @@ export class Lane {
       id: this.id, name: this.name, color: this.color,
       minHz: this.minHz, maxHz: this.maxHz,
       sensitivity: this.sensitivity, gainDb: this.gainDb,
+      attackMs: this.attackMs, releaseMs: this.releaseMs,
+      refractoryMs: this.refractoryMs,
+      centroidMinHz: this.centroidMinHz, centroidMaxHz: this.centroidMaxHz,
     };
   }
 }
