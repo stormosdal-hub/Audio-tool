@@ -24,6 +24,11 @@ export class AudioEngine {
 
     this.recorder = null;
     this._recChunks = [];
+
+    // Ring of past frames for retroactive lane replay (90 s window).
+    // Each entry: { t, freqLin: Float32Array (copy), binHz, nyquist }
+    this._frameHistory = [];
+    this._histPrune = 0;
   }
 
   get sampleRate() { return this.ctx ? this.ctx.sampleRate : 48000; }
@@ -177,6 +182,23 @@ export class AudioEngine {
       };
       for (const fn of this._listeners) fn(frame);
 
+      // Keep a copy of freqLin so lanes added later can replay history.
+      this._frameHistory.push({
+        t: frame.t,
+        freqLin: new Float32Array(this.freqLin),
+        binHz: this.binHz,
+        nyquist: this.nyquist,
+      });
+      // Prune entries older than 90 s — batch to once per second to avoid
+      // O(n) splice every frame.
+      if (++this._histPrune >= 60) {
+        this._histPrune = 0;
+        const cutoff = frame.t - 90;
+        let i = 0;
+        while (i < this._frameHistory.length && this._frameHistory[i].t < cutoff) i++;
+        if (i > 0) this._frameHistory.splice(0, i);
+      }
+
       this._raf = requestAnimationFrame(tick);
     };
     this._raf = requestAnimationFrame(tick);
@@ -192,6 +214,12 @@ export class AudioEngine {
     if (this.source) { this.source.disconnect(); this.source = null; }
     // Release the audio hardware while idle; start() resumes it again.
     if (this.ctx && this.ctx.state === "running") this.ctx.suspend().catch(() => {});
+  }
+
+  // Feed all stored frames into a newly created lane so it sees the full
+  // recorded history instead of starting blank.
+  replayHistory(lane) {
+    for (const f of this._frameHistory) lane.process(f);
   }
 
   // ---- Raw recording (WebM/Opus or whatever the browser supports) ----

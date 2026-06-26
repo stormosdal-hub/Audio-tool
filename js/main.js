@@ -80,6 +80,7 @@ function addLane(cfg) {
     gainDb: cfg.gainDb,
   });
   buildLaneDom(lane);
+  engine.replayHistory(lane);
   state.lanes.push(lane);
   spectro.setLanes(state.lanes);
   updateEmptyHint();
