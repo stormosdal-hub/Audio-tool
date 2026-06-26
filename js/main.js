@@ -146,6 +146,11 @@ function buildLaneDom(lane) {
     lane.setBand(lo, hi);
     minEl.value = Math.round(lane.minHz);
     maxEl.value = Math.round(lane.maxHz);
+    // Re-derive the whole timeline from the stored raw spectra so the envelope
+    // and onset markers reflect the NEW band immediately — you can sweep the
+    // frequency and watch which strokes light up without re-recording.
+    lane.clear();
+    engine.replayHistory(lane);
     save();
   };
   minEl.addEventListener("change", applyBand);
