@@ -1,0 +1,3 @@
+# Claude Code local, machine-specific state (not for the repo)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
