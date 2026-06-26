@@ -27,8 +27,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # enablement: true turns Pages on (build type = GitHub Actions) via the API
+      # on the first run, so there's no manual Settings step.
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       # The whole repo root IS the site (index.html at the top level).
       - name: Upload static site
