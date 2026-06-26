@@ -4,6 +4,8 @@ import { AudioEngine } from "./audio-engine.js";
 import { Lane } from "./lane.js";
 import { Spectrogram } from "./spectrogram.js";
 import { PRESETS, STARTER_LANES } from "./presets.js";
+import { DrumKit } from "./drumkit.js";
+import { Scale } from "./scale.js";
 import { fitCanvas, fmtHz, nextColor, uid, PAD_LEFT, clamp } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +25,8 @@ const state = {
 };
 
 let spectro = null;
+let kit = null;
+let scale = null;
 
 // ------------------------------------------------------------------ helpers
 function currentNow() {
@@ -180,6 +184,8 @@ function renderLoop() {
   renderRuler(nowT, pps);
   // spectrogram overlay (axis/guides/selection)
   spectro.render();
+  // highlight scale (grid, events, playhead)
+  if (scale) scale.render();
 
   // throttled DOM stats
   if (++statTick % 8 === 0) {
@@ -189,6 +195,10 @@ function renderLoop() {
         const bpm = lane.lastIntervalMs > 0 ? Math.round(60000 / lane.lastIntervalMs) : 0;
         lane._bpmEl.textContent = bpm > 0 && bpm < 600 ? bpm : "–";
       }
+    }
+    if (scale) {
+      $("scalePos").textContent = scale.positionLabel();
+      $("scaleEmpty").classList.toggle("hidden", scale.tracks.length > 0);
     }
   }
   requestAnimationFrame(renderLoop);
@@ -394,6 +404,54 @@ function init() {
     for (const lane of state.lanes) lane.process(frame);
     spectro.process(frame, state.pps);
   });
+
+  // ---- Highlight Scale ----
+  kit = new DrumKit();
+  scale = new Scale($("scaleGrid"), $("scaleTracks"), kit, {
+    onPlayState: (on) => {
+      const b = $("scalePlay");
+      b.textContent = on ? "■ Stop" : "▶ Play";
+      b.classList.toggle("primary", !on);
+      b.classList.toggle("ghost", on);
+    },
+  });
+  scale.load();
+  $("bpm").value = scale.bpm;
+  $("beatsPerBar").value = scale.beatsPerBar;
+  $("bars").value = scale.bars;
+  $("snap").value = String(scale.snap);
+  $("loopBtn").classList.toggle("active", scale.loop);
+
+  $("scalePlay").addEventListener("click", () => scale.toggle());
+  $("loopBtn").addEventListener("click", () => {
+    scale.loop = !scale.loop;
+    $("loopBtn").classList.toggle("active", scale.loop);
+    scale._save();
+  });
+  $("bpm").addEventListener("change", () => {
+    scale.bpm = clamp(parseInt($("bpm").value, 10) || 100, 30, 300);
+    $("bpm").value = scale.bpm;
+    if (scale.playing) scale.stop(); // tempo change restarts cleanly
+    scale._save();
+  });
+  $("beatsPerBar").addEventListener("change", () => {
+    scale.beatsPerBar = clamp(parseInt($("beatsPerBar").value, 10) || 4, 1, 16);
+    $("beatsPerBar").value = scale.beatsPerBar;
+    if (scale.playing) scale.stop();
+    scale._save();
+  });
+  $("bars").addEventListener("change", () => {
+    scale.bars = clamp(parseInt($("bars").value, 10) || 4, 1, 64);
+    $("bars").value = scale.bars;
+    scale._save();
+  });
+  $("snap").addEventListener("change", () => { scale.snap = parseFloat($("snap").value); scale._save(); });
+  $("sendHits").addEventListener("click", () => {
+    const n = scale.fromLaneOnsets(state.lanes);
+    setStatus(n > 0 ? `plotted ${n} hits to scale` : "no hits yet — record some first");
+  });
+  $("addTrack").addEventListener("click", () => scale.addTrack());
+  $("clearScale").addEventListener("click", () => scale.clearEvents());
 
   if (navigator.mediaDevices) {
     navigator.mediaDevices.addEventListener?.("devicechange", refreshDevices);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Conga Transient Grapher</title>
+  <title>Groove Grapher</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -11,8 +11,8 @@
     <div class="brand">
       <span class="logo">▦</span>
       <div>
-        <h1>Conga Transient Grapher</h1>
-        <p class="tagline">Live multi-lane pitch-band stroke visualizer</p>
+        <h1>Groove Grapher</h1>
+        <p class="tagline">Percussion transient grapher &amp; beat scale</p>
       </div>
     </div>
 
@@ -74,6 +74,41 @@
     <div id="lanes" class="lanes"></div>
     <div id="emptyHint" class="empty-hint">
       No lanes yet. Click <strong>Add lane</strong> or a preset above, then press <strong>Start</strong>.
+    </div>
+  </section>
+
+  <section class="scale-panel panel">
+    <div class="panel-head">
+      <h2>Highlight Scale</h2>
+      <div class="scale-transport">
+        <button id="scalePlay" class="primary">▶ Play</button>
+        <button id="loopBtn" class="ghost active" title="Loop playback">↻ Loop</button>
+        <label class="field inline">BPM <input id="bpm" type="number" min="30" max="300" step="1" value="100" /></label>
+        <label class="field inline">Beats/bar <input id="beatsPerBar" type="number" min="1" max="16" step="1" value="4" /></label>
+        <label class="field inline">Bars <input id="bars" type="number" min="1" max="64" step="1" value="4" /></label>
+        <label class="field inline">Snap
+          <select id="snap">
+            <option value="0">Off</option>
+            <option value="1">1/4</option>
+            <option value="0.5">1/8</option>
+            <option value="0.25" selected>1/16</option>
+          </select>
+        </label>
+        <span class="pos">pos <b id="scalePos">1.1.1</b></span>
+      </div>
+    </div>
+    <div class="scale-actions">
+      <button id="sendHits" class="primary-outline">→ Send hits to scale</button>
+      <button id="addTrack" class="ghost">＋ Track</button>
+      <button id="clearScale" class="ghost">⌫ Clear hits</button>
+      <span class="hint">Click a row to add a hit · drag to move (snaps to grid) · right-click a hit to delete · the colored dot previews the sound</span>
+    </div>
+    <div class="scale-body">
+      <div class="scale-tracks" id="scaleTracks"></div>
+      <div class="scale-grid-wrap"><canvas id="scaleGrid"></canvas></div>
+    </div>
+    <div id="scaleEmpty" class="empty-hint">
+      No tracks yet. Record some hits above, then press <strong>→ Send hits to scale</strong> — or add a track and click on its row to place hits.
     </div>
   </section>
 

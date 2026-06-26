@@ -1,9 +1,12 @@
-# Conga Transient Grapher
+# Groove Grapher
 
-A local, browser-based **transient grapher** for hand drums. Record from any
-microphone (built-in or external/USB interface) and watch each conga stroke —
-bass, open tone, slap — light up on its own **pitch-band timeline lane**. Add as
-many lanes as you like and assign each one a frequency range.
+A local, browser-based **percussion transient grapher + beat scale**. Record from
+any microphone (built-in or external/USB interface) and watch each stroke —
+bass, open tone, slap, or any percussion hit — light up on its own **pitch-band
+timeline lane**. Add as many lanes as you like and assign each one a frequency
+range. Then plot the detected hits onto a tempo-based **Highlight Scale**, swap
+them for drum-kit sounds (or your own samples), drag them in time, and play the
+groove back.
 
 Everything runs **offline in your browser**. No audio ever leaves your computer.
 
@@ -56,6 +59,37 @@ for microphone permission the first time.
 
 Your lanes, zoom and device choice are saved in the browser, so they're still
 there next time.
+
+---
+
+## The Highlight Scale (beat editor)
+
+The panel at the bottom turns your captured hits into an editable, tempo-based
+groove — like a mini arrangement view.
+
+1. **Set the tempo & meter** — type a **BPM**, **Beats/bar** (time signature top
+   number) and how many **Bars** the scale spans. The grid shows bars and beats
+   so you can see exactly where you are; **pos** reads out `bar.beat.sixteenth`
+   during playback.
+2. **Clap/play your pattern** into the lanes above, then press
+   **→ Send hits to scale**. Each lane becomes a **track**, and every detected
+   hit is plotted at its real time, converted to beats at the current BPM. (The
+   scale auto-grows its bar count to fit.)
+3. **Replace the claps with sounds** — each track has a **sound dropdown**
+   (Kick, Snare, Hats, Clap, Conga, Clave, Cowbell, Shaker, …). Click the
+   colored dot to **preview**. Want your own sound? Hit **Load** and pick any
+   audio file to use as that track's sample.
+4. **Move / edit the hits** — **drag** a hit to shift it in time (it snaps to the
+   **Snap** grid: ¼, ⅛, 1⁄16, or off). **Click an empty row** to add a hit,
+   **right-click** (or select + Delete) to remove one.
+5. **Play it back** with **▶ Play**; toggle **↻ Loop** to loop the bars. A
+   playhead sweeps the grid in time with the sound.
+
+The scale (tempo, tracks, sounds, hits) is saved in the browser too. Loaded
+samples are kept for the session only — re-load them next time.
+
+> Tip: set the BPM *before* sending hits if you want the plotted positions to
+> land on the grid; then nudge with drag + snap to tighten the groove.
 
 ---
 

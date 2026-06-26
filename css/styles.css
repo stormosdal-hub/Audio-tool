@@ -169,6 +169,51 @@ button.recording { background: var(--danger); color: #fff; border-color: transpa
 
 input[type="range"] { accent-color: var(--accent); }
 
+/* ---------- Highlight Scale ---------- */
+.scale-panel .panel-head { flex-wrap: wrap; align-items: center; }
+.scale-transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+.scale-transport .field.inline input { width: 56px; }
+.scale-transport .pos { font-size: 12px; color: var(--muted); }
+.scale-transport .pos b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.scale-actions {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+
+.scale-body { display: flex; align-items: stretch; }
+.scale-tracks {
+  width: 248px; flex: 0 0 248px; border-right: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.scale-track-head {
+  display: flex; align-items: center; padding: 0 10px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); border-bottom: 1px solid var(--line);
+}
+.scale-track {
+  display: flex; align-items: center; gap: 6px; padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.st-color { width: 16px; height: 16px; border-radius: 50%; border: none; padding: 0; cursor: pointer; flex: 0 0 auto; }
+.st-name {
+  width: 52px; background: transparent; border: none; color: var(--text);
+  font-size: 12px; font-weight: 600; padding: 2px 4px; border-radius: 4px;
+}
+.st-name:focus { outline: 1px solid var(--line); background: var(--bg-3); }
+.st-sound {
+  flex: 1; min-width: 0; background: var(--bg-3); border: 1px solid var(--line);
+  color: var(--text); border-radius: 6px; padding: 3px 4px; font-size: 11px;
+}
+.st-load, .st-mute, .st-del { padding: 3px 7px; font-size: 11px; flex: 0 0 auto; }
+.st-load.active { background: var(--accent); color: #06231f; border-color: transparent; }
+
+.scale-grid-wrap { flex: 1; min-width: 0; position: relative; }
+#scaleGrid { display: block; width: 100%; height: 120px; cursor: crosshair; }
+
+.scale-panel .empty-hint { padding: 22px; }
+.scale-panel .empty-hint.hidden { display: none; }
+
 /* ---------- Footer ---------- */
 .footer {
   display: flex; justify-content: space-between;
