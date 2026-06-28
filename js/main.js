@@ -7,10 +7,16 @@ import { PRESETS, STARTER_LANES } from "./presets.js";
 import { DrumKit } from "./drumkit.js";
 import { Scale } from "./scale.js";
 import { Audition } from "./audition.js";
+import { openModal, initModal } from "./modal.js";
 import { fitCanvas, fmtHz, nextColor, uid, PAD_LEFT, clamp } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = "conga-grapher-v1";
+
+// On a phone-sized screen the per-lane settings and the Highlight Scale open as
+// pop-up windows instead of inline panels. Evaluated at click time so it tracks
+// rotation / resize. Keep the breakpoint in sync with css/mobile.css.
+const isMobile = () => window.matchMedia("(max-width: 560px)").matches;
 
 const engine = new AudioEngine();
 
@@ -223,8 +229,19 @@ function buildLaneDom(lane) {
   const advEl = el.querySelector(".lane-adv");
   const settingsBtn = el.querySelector(".lane-settings");
   settingsBtn.addEventListener("click", () => {
-    const nowHidden = advEl.classList.toggle("hidden");
-    settingsBtn.classList.toggle("active", !nowHidden);
+    if (isMobile()) {
+      // Pop the settings out into their own window. The panel is the same node,
+      // so all the sliders below stay wired; it returns inline when closed.
+      advEl.classList.remove("hidden");
+      settingsBtn.classList.add("active");
+      openModal(advEl, `${lane.name} · innstillinger`, () => {
+        advEl.classList.add("hidden");
+        settingsBtn.classList.remove("active");
+      });
+    } else {
+      const nowHidden = advEl.classList.toggle("hidden");
+      settingsBtn.classList.toggle("active", !nowHidden);
+    }
   });
 
   // Centroid gate (number inputs commit on change → recompute once).
@@ -564,6 +581,14 @@ function init() {
   });
   $("addTrack").addEventListener("click", () => scale.addTrack());
   $("clearScale").addEventListener("click", () => scale.clearEvents());
+
+  // On mobile the whole Highlight Scale opens as its own pop-up window (it's
+  // hidden inline via css/mobile.css). The render loop keeps drawing it; the
+  // grid canvas re-fits to the modal width on the next frame.
+  initModal();
+  $("scaleLauncher").addEventListener("click", () => {
+    openModal(document.querySelector(".scale-panel"), "Highlight Scale");
+  });
 
   // ---- Lane audition (play windowed grains around each onset) ----
   audition = new Audition(engine, () => state.lanes);

@@ -88,6 +88,10 @@
     </div>
   </section>
 
+  <section class="modal-launchers">
+    <button id="scaleLauncher" class="primary">▦ Åpne Highlight Scale</button>
+  </section>
+
   <section class="scale-panel panel">
     <div class="panel-head">
       <h2>Highlight Scale</h2>
@@ -127,6 +131,17 @@
     <span>Runs fully offline in your browser · nothing is uploaded.</span>
     <a href="README.md" target="_blank">How it works</a>
   </footer>
+
+  <div id="appModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 class="modal-title"></h2>
+        <button class="modal-x ghost" data-close title="Lukk">✕</button>
+      </div>
+      <div class="modal-body"></div>
+    </div>
+  </div>
 
   <script type="module" src="js/main.js"></script>
 </body>
