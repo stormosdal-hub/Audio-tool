@@ -336,36 +336,71 @@ export class Scale {
       const r = cv.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width };
     };
+    // Select an event and start dragging it from this pointer.
+    const grab = (ev, beat, pointerId) => {
+      this.selected = ev;
+      this._drag = { ev, offset: beat - ev.beat };
+      try { cv.setPointerCapture(pointerId); } catch (_) {}
+      this._save();
+    };
     cv.addEventListener("pointerdown", (e) => {
       const p = local(e);
       const ti = this._yToTrack(p.y);
       if (ti < 0) return;
       const beat = this._xToBeat(p.x, p.w);
-      let ev = this._hitTest(beat, ti, p.w);
-      if (!ev) {
-        ev = this.addEvent(this.tracks[ti].id, this._snap(beat), 0.9);
+      const ev = this._hitTest(beat, ti, p.w);
+      if (ev) { grab(ev, beat, e.pointerId); return; } // existing hit → drag now
+
+      // Empty spot → create a hit. On a touchscreen this requires a ~0.5 s
+      // long-press, so a quick tap or a scroll gesture won't drop stray hits;
+      // mouse and pen still create on click.
+      if (e.pointerType === "touch") {
+        this._cancelLongPress();
+        const trackId = this.tracks[ti].id;
+        const snapBeat = this._snap(beat);
+        const pid = e.pointerId;
+        this._longPress = {
+          pid, x: e.clientX, y: e.clientY,
+          timer: setTimeout(() => {
+            this._longPress = null;
+            const created = this.addEvent(trackId, snapBeat, 0.9);
+            grab(created, created.beat, pid); // hold-then-drag to fine-tune
+            if (navigator.vibrate) { try { navigator.vibrate(15); } catch (_) {} }
+          }, 500),
+        };
+      } else {
+        grab(this.addEvent(this.tracks[ti].id, this._snap(beat), 0.9), beat, e.pointerId);
       }
-      this.selected = ev;
-      this._drag = { ev, offset: beat - ev.beat };
-      cv.setPointerCapture(e.pointerId);
-      this._save();
     });
     cv.addEventListener("pointermove", (e) => {
+      // Movement before the timer fires means scrolling/aiming, not a press.
+      if (this._longPress && e.pointerId === this._longPress.pid) {
+        const dx = e.clientX - this._longPress.x, dy = e.clientY - this._longPress.y;
+        if (dx * dx + dy * dy > 100) this._cancelLongPress(); // moved > 10 px
+      }
       if (!this._drag) return;
       const p = local(e);
       const beat = this._xToBeat(p.x, p.w);
       this._drag.ev.beat = clamp(this._snap(beat - this._drag.offset), 0, this.totalBeats());
     });
-    const end = () => { if (this._drag) { this._drag = null; this._save(); } };
+    const end = () => {
+      this._cancelLongPress();
+      if (this._drag) { this._drag = null; this._save(); }
+    };
     cv.addEventListener("pointerup", end);
     cv.addEventListener("pointercancel", end);
     cv.addEventListener("contextmenu", (e) => {
+      e.preventDefault(); // also suppresses the mobile long-press text callout
       const p = local(e);
       const ti = this._yToTrack(p.y);
       if (ti < 0) return;
       const ev = this._hitTest(this._xToBeat(p.x, p.w), ti, p.w);
-      if (ev) { e.preventDefault(); this.removeEvent(ev); this._save(); }
+      if (ev) { this.removeEvent(ev); this._save(); }
     });
+  }
+
+  _cancelLongPress() {
+    if (this._longPress) { clearTimeout(this._longPress.timer); this._longPress = null; }
   }
 
   _initKeyboard() {

@@ -146,10 +146,20 @@ html, body {
 .modal-body { padding: 0; overflow: auto; -webkit-overflow-scrolling: touch; flex: 1 1 auto; }
 body.modal-lock { overflow: hidden; }
 
+/* A lane popped into the modal drops its divider and shows its settings. */
+.lane.in-modal { border-bottom: none; }
+.lane.in-modal .lane-adv { border-top: 1px solid var(--line); }
+
+/* Stop the browser's long-press text callout / selection on the beat grid so
+   our own 0.5 s long-press-to-add gesture is the only thing that fires. */
+#scaleGrid { -webkit-touch-callout: none; user-select: none; }
+
 /* Launcher button is desktop-hidden; the phone query reveals it. */
 .modal-launchers { display: none; }
 
-@media (max-width: 560px) {
+/* Same condition as MOBILE_MQ in main.js — portrait phones OR short landscape
+   touch screens, so the pop-up stays full-screen across a 90° rotation. */
+@media (max-width: 560px), (max-height: 560px) and (pointer: coarse) {
   /* Show the Highlight Scale launcher and hide the inline panel; the modal
      copy (.in-modal, higher specificity) is what becomes visible on open. */
   .modal-launchers { display: flex; padding: 8px 10px; }
@@ -157,7 +167,7 @@ body.modal-lock { overflow: hidden; }
   .scale-panel { display: none; }
   .scale-panel.in-modal { display: block; margin: 0; border: none; }
 
-  /* Full-screen pop-up on phones so the grid and sliders have room. */
+  /* Full-screen pop-up so the grid and sliders have room in either orientation. */
   .modal-card {
     width: 100vw; max-width: 100vw; height: 100%; max-height: 100%;
     margin: 0; border: none; border-radius: 0;

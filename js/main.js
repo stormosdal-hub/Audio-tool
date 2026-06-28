@@ -7,16 +7,19 @@ import { PRESETS, STARTER_LANES } from "./presets.js";
 import { DrumKit } from "./drumkit.js";
 import { Scale } from "./scale.js";
 import { Audition } from "./audition.js";
-import { openModal, initModal } from "./modal.js";
+import { openModal, closeModal, initModal } from "./modal.js";
 import { fitCanvas, fmtHz, nextColor, uid, PAD_LEFT, clamp } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = "conga-grapher-v1";
 
 // On a phone-sized screen the per-lane settings and the Highlight Scale open as
-// pop-up windows instead of inline panels. Evaluated at click time so it tracks
-// rotation / resize. Keep the breakpoint in sync with css/mobile.css.
-const isMobile = () => window.matchMedia("(max-width: 560px)").matches;
+// pop-up windows instead of inline panels. The second clause keeps phones in
+// landscape (wide but short) counted as mobile, so rotating doesn't drop you
+// back to the desktop layout. Evaluated at click time so it tracks rotation.
+// Keep this query in sync with the modal block in css/mobile.css.
+const MOBILE_MQ = "(max-width: 560px), (max-height: 560px) and (pointer: coarse)";
+const isMobile = () => window.matchMedia(MOBILE_MQ).matches;
 
 const engine = new AudioEngine();
 
@@ -114,6 +117,9 @@ function recomputeLane(lane) {
 function removeLane(lane) {
   const i = state.lanes.indexOf(lane);
   if (i >= 0) state.lanes.splice(i, 1);
+  // If this lane is currently popped out, close the window first so it isn't
+  // left orphaned in the modal (returns the node home, then we remove it).
+  if (lane._dom?.classList.contains("in-modal")) closeModal();
   lane._dom?.remove();
   spectro.setLanes(state.lanes);
   updateEmptyHint();
@@ -229,16 +235,18 @@ function buildLaneDom(lane) {
   const advEl = el.querySelector(".lane-adv");
   const settingsBtn = el.querySelector(".lane-settings");
   settingsBtn.addEventListener("click", () => {
-    if (isMobile()) {
-      // Pop the settings out into their own window. The panel is the same node,
-      // so all the sliders below stay wired; it returns inline when closed.
+    if (isMobile() && !el.classList.contains("in-modal")) {
+      // Pop the WHOLE lane — header, waveform and settings — into its own
+      // window. It's the same node, so the canvas keeps rendering and every
+      // control stays wired; it returns inline when closed.
       advEl.classList.remove("hidden");
       settingsBtn.classList.add("active");
-      openModal(advEl, `${lane.name} · innstillinger`, () => {
+      openModal(el, lane.name, () => {
         advEl.classList.add("hidden");
         settingsBtn.classList.remove("active");
       });
     } else {
+      // Desktop, or the ⚙ inside the open pop-up: just toggle the settings.
       const nowHidden = advEl.classList.toggle("hidden");
       settingsBtn.classList.toggle("active", !nowHidden);
     }
