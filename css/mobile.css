@@ -1,0 +1,122 @@
+/* ============================================================================
+   mobile.css — responsive overrides for phones & small tablets.
+   Loaded AFTER styles.css so these rules win inside their media queries; the
+   desktop layout is untouched on wider screens. Selectors mirror index.html /
+   the lane DOM built in main.js (.lane-head, .lane-knob, .lane-adv, …).
+   ============================================================================ */
+
+/* Never let a stray fixed-width element cause a horizontal scrollbar, and stop
+   iOS from auto-inflating text after orientation changes. */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ------------------------------------------------------------------ tablets */
+@media (max-width: 820px) {
+  /* Tighter chrome so more of the screen is usable content. */
+  .topbar { padding: 10px 12px; gap: 10px; }
+  .controls { padding: 10px 12px; gap: 10px; }
+  .panel { margin: 8px 10px; }
+  .panel-head { padding: 9px 12px; }
+
+  /* Top bar: brand and transport each take a full row and wrap freely. */
+  .topbar { flex-direction: column; align-items: stretch; }
+  .transport { width: 100%; justify-content: flex-start; }
+  .transport .field { flex: 1 1 160px; }
+  .field select, .field input[type="text"] { max-width: none; width: 100%; }
+
+  /* Controls row: the two groups stack and fill the width. */
+  .controls { flex-direction: column; align-items: stretch; }
+  .control-group { width: 100%; }
+  .control-group.right { justify-content: space-between; }
+
+  /* Shorter spectrogram so the lanes are reachable without much scrolling. */
+  #spectro, #spectroOverlay { height: 190px; }
+
+  /* Highlight Scale: tracks panel sits ABOVE the grid instead of beside it,
+     and the grid can scroll horizontally if the bars are wide. */
+  .scale-body { flex-direction: column; }
+  .scale-tracks { width: 100%; flex: 1 1 auto; border-right: none; border-bottom: 1px solid var(--line); }
+  .scale-grid-wrap { width: 100%; overflow-x: auto; }
+  #scaleGrid { min-width: 640px; }   /* keep beats readable; wrapper scrolls */
+
+  .scale-transport { margin-left: 0; width: 100%; }
+}
+
+/* -------------------------------------------------------------------- phones */
+@media (max-width: 560px) {
+  :root { --gutter: 10px; }
+
+  .topbar h1 { font-size: 16px; }
+  .tagline { display: none; }            /* save vertical space */
+  .logo { font-size: 22px; }
+
+  /* Comfortable touch targets everywhere. */
+  button { padding: 10px 12px; min-height: 44px; }
+  .icon-btn { padding: 10px 12px; }
+  .lane-btn, .st-load, .st-mute, .st-del { min-height: 36px; padding: 6px 10px; }
+
+  /* 16px on real inputs stops iOS Safari from zooming when they get focus. */
+  .field select,
+  .field input[type="text"],
+  .field input[type="number"],
+  .lane-freqs input,
+  .lane-adv input[type="number"],
+  .st-name, .st-sound,
+  #bpm, #beatsPerBar, #bars, #snap, #fft, #device {
+    font-size: 16px;
+  }
+
+  /* Buttons in the transport go full width and wrap to their own rows. */
+  .transport { flex-wrap: wrap; gap: 8px; }
+  .transport .field { flex: 1 1 100%; }
+  #startBtn, #recBtn { flex: 1 1 45%; }
+
+  /* Presets wrap into a tidy grid of chips. */
+  .presets { width: 100%; }
+  .presets button { flex: 1 1 auto; }
+
+  /* Zoom / FFT controls each take a full row so the slider has room. */
+  .control-group.right { flex-direction: column; align-items: stretch; gap: 10px; }
+  .control-group.right .field.inline { width: 100%; }
+  .control-group.right input[type="range"] { flex: 1 1 auto; width: auto; }
+
+  /* Lane header: let the name field grow, drop fixed widths, keep it wrapping. */
+  .lane-head { gap: 8px; padding: 8px 10px; }
+  .lane-name { width: auto; flex: 1 1 120px; }
+  .lane-freqs input { width: 70px; }
+  .lane-knob { flex: 1 1 100%; }
+  .lane-knob input[type="range"] { flex: 1 1 auto; width: auto; }
+  .lane-stats { margin-left: 0; width: 100%; justify-content: space-between; }
+  .lane canvas { height: 120px; }        /* taller = easier to read on a phone */
+
+  /* Audition transport: every control on its own full-width row. */
+  .lane-transport { gap: 8px; padding: 8px 10px; }
+  .lane-transport .lt-spacer { display: none; }
+  .lane-transport .field.inline { width: 100%; }
+  .lane-transport input[type="range"] { flex: 1 1 auto; width: auto; }
+  #auditionBtn { width: 100%; }
+
+  /* Advanced per-lane panel: ranges stretch, labels stack. */
+  .adv-group { gap: 10px; }
+  .adv-group input[type="range"] { flex: 1 1 auto; width: auto; }
+  .adv-title { width: 100%; }
+
+  /* Highlight Scale transport wraps; number fields stay tappable. */
+  .scale-transport { gap: 8px; }
+  .scale-transport .field.inline { flex: 1 1 auto; }
+  .scale-transport .field.inline input { width: 64px; }
+  .scale-actions { gap: 8px; }
+  .scale-actions .hint, .lane-transport .hint, .controls .hint { flex: 1 1 100%; }
+
+  /* Footer stacks. */
+  .footer { flex-direction: column; gap: 6px; text-align: center; }
+}
+
+/* Coarse-pointer (touch) devices of any width: give sliders a fatter thumb so
+   they're grabbable with a fingertip. */
+@media (pointer: coarse) {
+  input[type="range"] { height: 28px; }
+}
