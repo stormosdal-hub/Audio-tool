@@ -116,18 +116,26 @@ export class Audition {
       const buf = ctx.createBuffer(1, spanLen, sr);
       const data = buf.getChannelData(0);
 
+      const onsetN = Math.round(pre * sr); // where the stroke sits inside each grain
       for (const t of ts) {
         const gStart = t - pre;
         const slice = this.engine.getAudioSlice(gStart, t + post);
         const off = Math.round((gStart - minT) * sr);
         const n = slice.length;
         const fN = Math.min(fadeN, n >> 1 || 1);
+        const peak = Math.min(Math.max(onsetN, fN), n - 1); // sample of the stroke itself
+        const decayN = Math.max(1, n - peak);               // length of the slope down
         for (let i = 0; i < n; i++) {
           const di = off + i;
           if (di < 0 || di >= spanLen) continue;
-          let env = 1;
+          // Rise: short raised-cosine fade-in into the stroke (crisp, no click).
+          // Slope down: raised-cosine decay from the stroke to silence, so the
+          // grain ENDS at zero and nothing between strokes leaks through — only
+          // the marked stroke's own attack + decay is audible.
+          let env;
           if (i < fN) env = 0.5 - 0.5 * Math.cos((Math.PI * i) / fN);
-          else if (i >= n - fN) env = 0.5 - 0.5 * Math.cos((Math.PI * (n - i)) / fN);
+          else if (i >= peak) env = 0.5 + 0.5 * Math.cos((Math.PI * (i - peak)) / decayN);
+          else env = 1;
           data[di] += slice[i] * env; // overlap-add if windows touch
         }
       }
