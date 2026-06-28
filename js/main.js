@@ -6,6 +6,7 @@ import { Spectrogram } from "./spectrogram.js";
 import { PRESETS, STARTER_LANES } from "./presets.js";
 import { DrumKit } from "./drumkit.js";
 import { Scale } from "./scale.js";
+import { Audition } from "./audition.js";
 import { fitCanvas, fmtHz, nextColor, uid, PAD_LEFT, clamp } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +28,7 @@ const state = {
 let spectro = null;
 let kit = null;
 let scale = null;
+let audition = null;
 
 // ------------------------------------------------------------------ helpers
 function currentNow() {
@@ -60,6 +62,7 @@ function save() {
     pps: state.pps,
     deviceId: state.deviceId,
     fftSize: state.fftSize,
+    audition: audition ? audition.toJSON() : undefined,
   };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {}
 }
@@ -133,6 +136,8 @@ function buildLaneDom(lane) {
       <div class="lane-stats">
         <span>hits <b class="lane-count">0</b></span>
         <span><b class="lane-bpm">–</b> bpm</span>
+        <button class="lane-btn lane-solo ghost" title="Solo i avspilling (lytt kun til denne)">S</button>
+        <button class="lane-btn lane-amute ghost" title="Mute lyd i avspilling">🔊</button>
         <button class="lane-btn lane-settings ghost" title="Advanced detection settings">⚙</button>
         <button class="lane-btn lane-mute ghost" title="Mute detection">Mute</button>
         <button class="lane-btn lane-remove ghost" title="Remove lane">✕</button>
@@ -193,6 +198,25 @@ function buildLaneDom(lane) {
     muteBtn.classList.toggle("active", lane.muted);
     muteBtn.textContent = lane.muted ? "Muted" : "Mute";
   });
+
+  // Audition mute/solo (playback only — independent of the detection Mute above).
+  const soloBtn = el.querySelector(".lane-solo");
+  const aMuteBtn = el.querySelector(".lane-amute");
+  soloBtn.classList.toggle("active", lane.audioSolo);
+  aMuteBtn.classList.toggle("active", lane.audioMuted);
+  aMuteBtn.textContent = lane.audioMuted ? "🔇" : "🔊";
+  soloBtn.addEventListener("click", () => {
+    lane.audioSolo = !lane.audioSolo;
+    soloBtn.classList.toggle("active", lane.audioSolo);
+    save();
+  });
+  aMuteBtn.addEventListener("click", () => {
+    lane.audioMuted = !lane.audioMuted;
+    aMuteBtn.classList.toggle("active", lane.audioMuted);
+    aMuteBtn.textContent = lane.audioMuted ? "🔇" : "🔊";
+    save();
+  });
+
   el.querySelector(".lane-remove").addEventListener("click", () => removeLane(lane));
 
   // ---- Advanced detection panel ----
@@ -275,6 +299,15 @@ function renderLoop() {
     if (scale) {
       $("scalePos").textContent = scale.positionLabel();
       $("scaleEmpty").classList.toggle("hidden", scale.tracks.length > 0);
+    }
+    if (audition) {
+      const btn = $("auditionBtn");
+      if (audition.playing) {
+        $("auditionPos").textContent = `${audition.elapsed().toFixed(1)} / ${audition.spanSec.toFixed(1)} s`;
+      } else {
+        btn.disabled = !audition.canPlay();
+        $("auditionPos").textContent = "";
+      }
     }
   }
   requestAnimationFrame(renderLoop);
@@ -366,6 +399,7 @@ async function start() {
 }
 
 function stop() {
+  if (audition) audition.stop();
   engine.stop();
   state.running = false;
   $("startBtn").textContent = "▶ Start";
@@ -465,8 +499,10 @@ function init() {
     updateFreezeBtn();
   });
   $("clearBtn").addEventListener("click", () => {
+    if (audition) audition.stop();
     state.lanes.forEach((l) => l.clear());
     spectro.clear();
+    engine.clearAudio(); // keep the audition window in step with the cleared onsets
   });
   $("recBtn").addEventListener("click", () => {
     if (engine.isRecording()) { engine.stopRecording(); setRecUI(false); }
@@ -528,6 +564,43 @@ function init() {
   });
   $("addTrack").addEventListener("click", () => scale.addTrack());
   $("clearScale").addEventListener("click", () => scale.clearEvents());
+
+  // ---- Lane audition (play windowed grains around each onset) ----
+  audition = new Audition(engine, () => state.lanes);
+  if (saved && saved.audition) audition.fromJSON(saved.audition);
+  $("auPre").value = audition.preMs;
+  $("auPost").value = audition.postMs;
+  $("auFade").value = audition.fadeMs;
+  $("auVol").value = Math.round(audition.masterGain * 100);
+  $("auPreV").textContent = audition.preMs + " ms";
+  $("auPostV").textContent = audition.postMs + " ms";
+  $("auFadeV").textContent = audition.fadeMs + " ms";
+  audition.onPlayState = (on) => {
+    const b = $("auditionBtn");
+    b.textContent = on ? "■ Stopp" : "▶ Spill lanes";
+    b.classList.toggle("primary", !on);
+    b.classList.toggle("ghost", on);
+    b.disabled = false; // stay clickable so you can stop mid-playback
+  };
+  $("auditionBtn").addEventListener("click", async () => {
+    if (audition.playing) { audition.stop(); return; }
+    const ok = await audition.play();
+    if (!ok) setStatus("ingen slag å spille — ta opp litt perkusjon først");
+  });
+  $("auPre").addEventListener("input", (e) => {
+    audition.preMs = +e.target.value; $("auPreV").textContent = audition.preMs + " ms"; save();
+  });
+  $("auPost").addEventListener("input", (e) => {
+    audition.postMs = +e.target.value; $("auPostV").textContent = audition.postMs + " ms"; save();
+  });
+  $("auFade").addEventListener("input", (e) => {
+    audition.fadeMs = +e.target.value; $("auFadeV").textContent = audition.fadeMs + " ms"; save();
+  });
+  $("auVol").addEventListener("input", (e) => {
+    audition.masterGain = clamp((+e.target.value) / 100, 0, 1);
+    if (audition._master) audition._master.gain.value = audition.masterGain;
+    save();
+  });
 
   if (navigator.mediaDevices) {
     navigator.mediaDevices.addEventListener?.("devicechange", refreshDevices);

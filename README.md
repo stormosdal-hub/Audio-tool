@@ -62,6 +62,35 @@ there next time.
 
 ---
 
+## Listen back to the lanes (audition)
+
+Once you've played a bit, the **▶ Spill lanes** bar above the timelines lets you
+*hear* what each lane detected — so you can check it by ear before sending hits
+to the scale.
+
+The catch it solves: lanes **overlap on purpose**, so simply playing each lane's
+full band-filtered audio would stack the *same* strokes on top of each other into
+mush. Instead, audition plays **only a short window around each detected stroke**
+— the rise up and the decay down — band-filtered to that lane's pitch range. Each
+lane contributes only its own hits, and they all play in sync.
+
+- **🔊 / S** on each lane header toggle **audio-mute** and **solo** for playback
+  (these are separate from the **Mute** that stops *detection*). Solo a lane to
+  hear just those strokes; mute the ones you don't want.
+- **Før** = how much of the attack (before the stroke) to include.
+  **Etter** = how much of the decay/ring (after) to include.
+  **Fade** softens the window edges so grains don't click. **Vol** is the master
+  level. All of it is saved between sessions.
+- It plays back the same onsets that **→ Send hits to scale** uses, so what you
+  hear is what gets plotted. **⌫ Clear** resets both the marks and the audio
+  window together.
+
+The audio it auditions is a rolling ~90 s buffer of the live mic — you don't have
+to press **● Rec** (that's only for saving a file). Auditioning works while
+listening *or* after you've stopped.
+
+---
+
 ## The Highlight Scale (beat editor)
 
 The panel at the bottom turns your captured hits into an editable, tempo-based
@@ -133,9 +162,17 @@ your drums using the spectrogram.
 - The **spectrogram** maps FFT bins onto a log-frequency axis and scrolls in
   lock-step with the lanes so the time axes line up.
 
+- **Audition** keeps a rolling ~90 s **raw-PCM ring buffer** of the mic (a
+  ScriptProcessor tap, in lockstep with the spectral history). To play a lane it
+  renders one sparse buffer — silence except a faded window copied in at each
+  onset — and runs it through `highpass(minHz) → lowpass(maxHz)`, so only the
+  strokes sound and filtering cost is per-lane, not per-grain.
+
 Source is plain ES modules under [`js/`](js/):
-`audio-engine.js` (capture + FFT loop), `lane.js` (band detection + drawing),
-`spectrogram.js` (spectrogram + drag-to-create), `presets.js`, `main.js` (UI).
+`audio-engine.js` (capture + FFT loop + PCM ring), `lane.js` (band detection +
+drawing), `spectrogram.js` (spectrogram + drag-to-create), `audition.js`
+(windowed lane playback), `drumkit.js` + `scale.js` (beat editor),
+`presets.js`, `main.js` (UI).
 
 ---
 

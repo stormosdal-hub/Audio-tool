@@ -29,6 +29,17 @@ export class AudioEngine {
     // Each entry: { t, freqLin: Float32Array (copy), binHz, nyquist }
     this._frameHistory = [];
     this._histPrune = 0;
+
+    // Rolling raw-PCM ring buffer (mono) for audition playback, kept in lockstep
+    // with the spectral history above so the same window is available as sound.
+    // Filled by a ScriptProcessor tap off the mic source. ~90 s @ ctx rate.
+    this.AUDIO_SEC = 90;
+    this._ring = null;
+    this._ringCap = 0;
+    this._writePos = 0;      // total samples ever written (monotonic)
+    this._audioStartT = -1;  // ctx time of global ring sample index 0
+    this._cap = null;        // ScriptProcessorNode
+    this._capSink = null;    // zero-gain sink so the tap runs without feedback
   }
 
   get sampleRate() { return this.ctx ? this.ctx.sampleRate : 48000; }
@@ -121,6 +132,95 @@ export class AudioEngine {
     // NOTE: deliberately NOT connecting analyser -> destination (would feed back).
 
     this._allocBuffers();
+    this._setupCapture();
+  }
+
+  // ---- Rolling raw-PCM capture (for audition playback) ----
+  // A ScriptProcessorNode is deprecated but universally supported and needs no
+  // separate worklet module (handy for a zero-build local tool). We only READ
+  // its input and route its (silent) output through a zero-gain sink to the
+  // destination, which is what keeps onaudioprocess firing without any feedback.
+  _setupCapture() {
+    this._teardownCapture();
+    if (!this.ctx || !this.source) return;
+    const sr = this.sampleRate;
+    if (!this._ring) {
+      this._ringCap = Math.ceil(this.AUDIO_SEC * sr);
+      this._ring = new Float32Array(this._ringCap);
+      this._writePos = 0;
+      this._audioStartT = -1;
+    }
+    let sp;
+    try { sp = this.ctx.createScriptProcessor(4096, 1, 1); }
+    catch (e) { return; }
+    sp.onaudioprocess = (e) => {
+      const inp = e.inputBuffer.getChannelData(0);
+      const n = inp.length;
+      const sr = this.sampleRate;
+      const blockStartT = this.ctx.currentTime - n / sr;
+      // Stamp the time of global sample 0 once, so onset timestamps
+      // (ctx.currentTime) map linearly to PCM offsets: t = startT + g/sr.
+      if (this._audioStartT < 0) this._audioStartT = blockStartT;
+      const ring = this._ring, cap = this._ringCap;
+      // Preserve that linear mapping across real-time GAPS (device switch,
+      // context suspend/resume) by padding silence for the skipped span. The
+      // `> n` guard ignores normal sub-block jitter so it can't slowly drift.
+      let gap = Math.round((blockStartT - this._audioStartT) * sr) - this._writePos;
+      if (gap > n) {
+        if (gap > cap) gap = cap;
+        for (let i = 0; i < gap; i++) { ring[this._writePos % cap] = 0; this._writePos++; }
+      }
+      let w = this._writePos % cap;
+      for (let i = 0; i < n; i++) { ring[w] = inp[i]; if (++w >= cap) w = 0; }
+      this._writePos += n;
+    };
+    const sink = this.ctx.createGain();
+    sink.gain.value = 0;
+    this.source.connect(sp);
+    sp.connect(sink);
+    sink.connect(this.ctx.destination);
+    this._cap = sp;
+    this._capSink = sink;
+  }
+
+  _teardownCapture() {
+    if (this._cap) { try { this._cap.disconnect(); } catch (e) {} this._cap.onaudioprocess = null; this._cap = null; }
+    if (this._capSink) { try { this._capSink.disconnect(); } catch (e) {} this._capSink = null; }
+  }
+
+  // The [t0, t1] (ctx-clock seconds) currently held in the PCM ring, or null.
+  audioRange() {
+    if (!this._ring || this._audioStartT < 0 || this._writePos === 0) return null;
+    const sr = this.sampleRate;
+    const oldest = Math.max(0, this._writePos - this._ringCap);
+    return {
+      t0: this._audioStartT + oldest / sr,
+      t1: this._audioStartT + this._writePos / sr,
+      sampleRate: sr,
+    };
+  }
+
+  // Mono Float32 slice for [tStart, tEnd) in ctx-clock seconds; zero-filled where
+  // audio isn't (or is no longer) available in the ring.
+  getAudioSlice(tStart, tEnd) {
+    const sr = this.sampleRate;
+    const len = Math.max(0, Math.round((tEnd - tStart) * sr));
+    const out = new Float32Array(len);
+    if (!this._ring || this._audioStartT < 0 || len === 0) return out;
+    const cap = this._ringCap;
+    const gStart = Math.round((tStart - this._audioStartT) * sr);
+    const oldest = Math.max(0, this._writePos - cap);
+    for (let i = 0; i < len; i++) {
+      const g = gStart + i;
+      if (g >= oldest && g < this._writePos) out[i] = this._ring[((g % cap) + cap) % cap];
+    }
+    return out;
+  }
+
+  clearAudio() {
+    this._writePos = 0;
+    this._audioStartT = -1;
+    if (this._ring) this._ring.fill(0);
   }
 
   _allocBuffers() {
@@ -209,6 +309,7 @@ export class AudioEngine {
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
     this.stopRecording();
+    this._teardownCapture(); // keep the ring's DATA so post-stop audition works
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null;
     if (this.source) { this.source.disconnect(); this.source = null; }

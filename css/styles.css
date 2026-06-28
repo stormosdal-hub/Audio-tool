@@ -130,6 +130,19 @@ button.recording { background: var(--danger); color: #fff; border-color: transpa
 .ruler { display: block; width: 100%; height: 26px; border-bottom: 1px solid var(--line); }
 .lanes { display: flex; flex-direction: column; }
 
+/* Lane audition transport */
+.lane-transport {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px; background: var(--bg-3); border-bottom: 1px solid var(--line);
+}
+.lane-transport .lt-spacer { flex: 1 1 auto; }
+.lane-transport .field.inline { font-size: 11px; color: var(--muted); }
+.lane-transport input[type="range"] { width: 92px; }
+.lane-transport b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 46px; }
+.lane-pos { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; min-width: 86px; }
+.lane-amute.active { background: var(--danger); color: #fff; border-color: transparent; }
+.lane-solo.active { background: var(--accent-2); color: #2a1a02; border-color: transparent; }
+
 .lane {
   border-bottom: 1px solid var(--line);
 }

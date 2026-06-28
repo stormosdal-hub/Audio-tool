@@ -1,3 +1,12 @@
 # Claude Code local, machine-specific state (not for the repo)
+.claude/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# graphify: local MCP server (absolute paths + deps) and generated code graph
+.mcp.json
+.mcp/
+graphify-out/
+
+# Node
+node_modules/

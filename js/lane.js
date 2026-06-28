@@ -41,6 +41,12 @@ export class Lane {
     this.gainDb = cfg.gainDb ?? 0;
     this.muted = false;
 
+    // Audition playback flags — SEPARATE from `muted` (which gates detection).
+    // audioMuted: excluded from lane playback. audioSolo: when any lane is
+    // soloed, only soloed lanes are heard.
+    this.audioMuted = cfg.audioMuted ?? false;
+    this.audioSolo = cfg.audioSolo ?? false;
+
     // Advanced detection settings (all default to current behavior).
     this.attackMs = cfg.attackMs ?? DEF_ATTACK_MS;
     this.releaseMs = cfg.releaseMs ?? DEF_RELEASE_MS;
@@ -307,6 +313,7 @@ export class Lane {
       attackMs: this.attackMs, releaseMs: this.releaseMs,
       refractoryMs: this.refractoryMs,
       centroidMinHz: this.centroidMinHz, centroidMaxHz: this.centroidMaxHz,
+      audioMuted: this.audioMuted, audioSolo: this.audioSolo,
     };
   }
 }
