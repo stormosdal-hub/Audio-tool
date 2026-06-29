@@ -318,9 +318,15 @@ export class AudioEngine {
   }
 
   // Feed all stored frames into a newly created lane so it sees the full
-  // recorded history instead of starting blank.
+  // recorded history instead of starting blank. We supply prevLin (the prior
+  // frame's spectrum) so the lane's spectral-flux transient detector behaves the
+  // same on recompute as it does live; the first frame has no predecessor.
   replayHistory(lane) {
-    for (const f of this._frameHistory) lane.process(f);
+    let prevLin = null;
+    for (const f of this._frameHistory) {
+      lane.process(prevLin ? { t: f.t, freqLin: f.freqLin, prevLin, binHz: f.binHz, nyquist: f.nyquist } : f);
+      prevLin = f.freqLin;
+    }
   }
 
   // ---- Raw recording (WebM/Opus or whatever the browser supports) ----

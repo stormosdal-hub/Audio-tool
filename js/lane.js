@@ -20,6 +20,9 @@ const DISPLAY_DB_CEIL = -10;   // top of the envelope's dB scale
 // Detector tunables.
 const SLOW_A = 0.05;           // slow-baseline EMA coefficient (~0.3 s @60fps)
 const ABS_FLOOR = 1e-6;        // absolute power gate so silence can't ratio-trigger
+const FLUX_FLOOR = 1e-5;       // absolute spectral-flux gate (mean-magnitude units)
+                               // so near-silent noise can't ratio-trigger the
+                               // transient path; the adaptive ratio does the rest
 const WARMUP_FRAMES = 25;      // let the baseline settle before allowing fires
 
 // Envelope defaults (ms). The fast envelope is now a real time-constant follower
@@ -55,6 +58,12 @@ export class Lane {
     // default 0/0 lets every onset through regardless of brightness.
     this.centroidMinHz = cfg.centroidMinHz ?? 0;
     this.centroidMaxHz = cfg.centroidMaxHz ?? 0;
+    // Transient/peak sensitivity (0..100). Drives a SECOND onset path based on
+    // band-limited spectral flux (how fast the spectrum rises). It catches sharp,
+    // SMALL peaks — claves, hi-hats — that the energy-ratio test misses, because
+    // flux reacts to the steepness of the attack, not absolute loudness. 0 = off
+    // (energy detector only). Defaults mildly on so narrow hits register.
+    this.peakBoost = cfg.peakBoost ?? 30;
 
     // bounded ring of { t, level(0..1), db, onset } in chronological order
     this.history = [];
@@ -62,6 +71,7 @@ export class Lane {
     // detector state
     this.fast = 0;
     this.slow = 0;
+    this.fluxBase = 0;      // adaptive baseline for the flux transient detector
     this.warm = 0;
     this.lastOnsetT = -1;
     this.onsetCount = 0;
@@ -90,6 +100,7 @@ export class Lane {
     this.history.length = 0;
     this.fast = 0;
     this.slow = 0;
+    this.fluxBase = 0;
     this.warm = 0;
     this.lastOnsetT = -1;
     this.onsetCount = 0;
@@ -110,16 +121,26 @@ export class Lane {
     const i0 = clamp(Math.round(this.minHz / binHz), 1, nbins - 1);
     const i1 = clamp(Math.round(maxHz / binHz), i0, nbins - 1);
 
+    // prevLin (last frame's spectrum) lets us measure spectral flux this frame.
+    // It is present on live frames and on recompute (see replayHistory); absent
+    // on the very first frame, where flux is simply skipped.
+    const prevLin = frame.prevLin;
     let sumMag = 0;
     let sumPow = 0;
+    let sumFlux = 0;
     for (let i = i0; i <= i1; i++) {
       const a = freqLin[i];
       sumMag += a;
       sumPow += a * a;
+      if (prevLin) {
+        const rise = a - prevLin[i];  // half-wave rectified: only rising bins
+        if (rise > 0) sumFlux += rise;
+      }
     }
     const nb = i1 - i0 + 1;
     const energy = sumPow / nb;     // mean power, band-width independent
     const avgMag = sumMag / nb;
+    const flux = sumFlux / nb;      // mean positive spectral flux, band-independent
 
     // Display level: mean band magnitude in dB, mapped to 0..1.
     const db = 20 * Math.log10(avgMag + 1e-12) + this.gainDb;
@@ -151,19 +172,37 @@ export class Lane {
     const aFast = energy > this.fast ? aAtk : aRel;
     this.fast += aFast * (energy - this.fast);
     if (this.warm < WARMUP_FRAMES) {
-      // Seed the baseline with a clean running mean during warm-up (only one
+      // Seed the baselines with a clean running mean during warm-up (only one
       // update per frame — no asymmetric EMA on top).
-      this.slow = (this.slow * this.warm + energy) / (this.warm + 1);
+      const w = this.warm;
+      this.slow = (this.slow * w + energy) / (w + 1);
+      this.fluxBase = (this.fluxBase * w + flux) / (w + 1);
       this.warm++;
     } else {
       const a = energy > this.slow ? SLOW_A * 0.25 : SLOW_A;
       this.slow += a * (energy - this.slow);
+      // Same asymmetric EMA for the flux baseline so a burst doesn't inflate it
+      // and mask the next transient.
+      const fa = flux > this.fluxBase ? SLOW_A * 0.25 : SLOW_A;
+      this.fluxBase += fa * (flux - this.fluxBase);
     }
 
     const sens = this.sensitivity / 100;          // 0..1
     const riseRatio = 2.6 - 1.4 * sens;           // ~2.6 (picky) .. ~1.2 (eager); default ≈1.8
-    const above =
+    const energyAbove =
       this.fast > ABS_FLOOR && this.fast > riseRatio * Math.max(this.slow, ABS_FLOOR);
+
+    // Transient path: fire when the band's spectral flux spikes well above its
+    // own baseline — a steep attack — even if the absolute energy never clears
+    // the energy detector. This is what catches small, narrow claves/hi-hats.
+    const peak = this.peakBoost / 100;            // 0..1
+    const fluxRatio = 6 - 4.5 * peak;             // ~6 (only big transients) .. ~1.5 (eager)
+    const fluxAbove =
+      peak > 0 && flux > FLUX_FLOOR && flux > fluxRatio * Math.max(this.fluxBase, FLUX_FLOOR);
+
+    // Either path can mark a hit; the refractory + edge-trigger below collapse an
+    // energy hit and a flux hit on the same stroke into a single onset.
+    const above = energyAbove || fluxAbove;
 
     const tms = frame.t * 1000;
     const primed = tms - this.lastOnsetT > this.refractoryMs;
@@ -311,7 +350,7 @@ export class Lane {
       minHz: this.minHz, maxHz: this.maxHz,
       sensitivity: this.sensitivity, gainDb: this.gainDb,
       attackMs: this.attackMs, releaseMs: this.releaseMs,
-      refractoryMs: this.refractoryMs,
+      refractoryMs: this.refractoryMs, peakBoost: this.peakBoost,
       centroidMinHz: this.centroidMinHz, centroidMaxHz: this.centroidMaxHz,
       audioMuted: this.audioMuted, audioSolo: this.audioSolo,
     };

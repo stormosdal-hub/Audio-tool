@@ -93,6 +93,7 @@ function addLane(cfg) {
     attackMs: cfg.attackMs,
     releaseMs: cfg.releaseMs,
     refractoryMs: cfg.refractoryMs,
+    peakBoost: cfg.peakBoost,
     centroidMinHz: cfg.centroidMinHz,
     centroidMaxHz: cfg.centroidMaxHz,
   });
@@ -167,8 +168,9 @@ function buildLaneDom(lane) {
         <label>attack <input class="lane-atk" type="range" min="1" max="200" step="1" value="${lane.attackMs}" /><b class="lane-atk-v">${lane.attackMs} ms</b></label>
         <label>release <input class="lane-rel" type="range" min="1" max="500" step="1" value="${lane.releaseMs}" /><b class="lane-rel-v">${lane.releaseMs} ms</b></label>
         <label>refractory <input class="lane-ref" type="range" min="20" max="500" step="5" value="${lane.refractoryMs}" /><b class="lane-ref-v">${lane.refractoryMs} ms</b></label>
+        <label title="Fanger skarpe, smale slag (klave, hi-hat) via spektral fluks — hvor bratt lyden stiger, ikke hvor høy den er. 0 = av.">peak <input class="lane-peak" type="range" min="0" max="100" step="1" value="${lane.peakBoost}" /><b class="lane-peak-v">${lane.peakBoost}</b></label>
       </div>
-      <p class="adv-hint">Skarpe lyder (hi-hat, klave) har høy centroid (&gt;2 kHz) og kort attack/refractory. Dype congas har lav centroid (&lt;600 Hz) — sett <b>max</b> ned for å luke bort skarpe slag, og lengre release/refractory for boomy ettersving. 0 = ingen grense.</p>
+      <p class="adv-hint">Skarpe lyder (hi-hat, klave) har høy centroid (&gt;2 kHz) og kort attack/refractory. Dype congas har lav centroid (&lt;600 Hz) — sett <b>max</b> ned for å luke bort skarpe slag, og lengre release/refractory for boomy ettersving. 0 = ingen grense. <b>peak</b> opp = fang smale, svake transienter som energidetektoren bommer på (ned hvis det gir falske slag).</p>
     </div>
     <canvas class="lane-canvas"></canvas>
   `;
@@ -280,6 +282,7 @@ function buildLaneDom(lane) {
   wireKnob(el.querySelector(".lane-atk"), el.querySelector(".lane-atk-v"), " ms", (v) => (lane.attackMs = v));
   wireKnob(el.querySelector(".lane-rel"), el.querySelector(".lane-rel-v"), " ms", (v) => (lane.releaseMs = v));
   wireKnob(el.querySelector(".lane-ref"), el.querySelector(".lane-ref-v"), " ms", (v) => (lane.refractoryMs = v));
+  wireKnob(el.querySelector(".lane-peak"), el.querySelector(".lane-peak-v"), "", (v) => (lane.peakBoost = v));
 
   $("lanes").appendChild(el);
 }
