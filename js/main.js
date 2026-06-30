@@ -94,6 +94,7 @@ function addLane(cfg) {
     releaseMs: cfg.releaseMs,
     refractoryMs: cfg.refractoryMs,
     peakBoost: cfg.peakBoost,
+    bodyBoost: cfg.bodyBoost,
     centroidMinHz: cfg.centroidMinHz,
     centroidMaxHz: cfg.centroidMaxHz,
   });
@@ -169,8 +170,9 @@ function buildLaneDom(lane) {
         <label>release <input class="lane-rel" type="range" min="1" max="500" step="1" value="${lane.releaseMs}" /><b class="lane-rel-v">${lane.releaseMs} ms</b></label>
         <label>refractory <input class="lane-ref" type="range" min="20" max="500" step="5" value="${lane.refractoryMs}" /><b class="lane-ref-v">${lane.refractoryMs} ms</b></label>
         <label title="Fanger skarpe, smale slag (klave, hi-hat) via spektral fluks — hvor bratt lyden stiger, ikke hvor høy den er. 0 = av.">peak <input class="lane-peak" type="range" min="0" max="100" step="1" value="${lane.peakBoost}" /><b class="lane-peak-v">${lane.peakBoost}</b></label>
+        <label title="Fanger dype, fyldige dunk/bass via integralet (arealet) av slaget — lyd som bygger seg opp og dør gradvis ut, ikke skarpe spisser. 0 = av.">body <input class="lane-body" type="range" min="0" max="100" step="1" value="${lane.bodyBoost}" /><b class="lane-body-v">${lane.bodyBoost}</b></label>
       </div>
-      <p class="adv-hint">Skarpe lyder (hi-hat, klave) har høy centroid (&gt;2 kHz) og kort attack/refractory. Dype congas har lav centroid (&lt;600 Hz) — sett <b>max</b> ned for å luke bort skarpe slag, og lengre release/refractory for boomy ettersving. 0 = ingen grense. <b>peak</b> opp = fang smale, svake transienter som energidetektoren bommer på (ned hvis det gir falske slag).</p>
+      <p class="adv-hint">Skarpe lyder (hi-hat, klave) har høy centroid (&gt;2 kHz) og kort attack/refractory. Dype congas har lav centroid (&lt;600 Hz) — sett <b>max</b> ned for å luke bort skarpe slag, og lengre release/refractory for boomy ettersving. 0 = ingen grense. <b>peak</b> opp = fang smale, svake transienter som energidetektoren bommer på (ned hvis det gir falske slag). <b>body</b> opp = fang dype, fyldige dunk/bass på arealet (integralet) av slaget — for lyd som bygger og dør gradvis (ned hvis sustain/ettersving gir falske slag).</p>
     </div>
     <canvas class="lane-canvas"></canvas>
   `;
@@ -283,6 +285,7 @@ function buildLaneDom(lane) {
   wireKnob(el.querySelector(".lane-rel"), el.querySelector(".lane-rel-v"), " ms", (v) => (lane.releaseMs = v));
   wireKnob(el.querySelector(".lane-ref"), el.querySelector(".lane-ref-v"), " ms", (v) => (lane.refractoryMs = v));
   wireKnob(el.querySelector(".lane-peak"), el.querySelector(".lane-peak-v"), "", (v) => (lane.peakBoost = v));
+  wireKnob(el.querySelector(".lane-body"), el.querySelector(".lane-body-v"), "", (v) => (lane.bodyBoost = v));
 
   $("lanes").appendChild(el);
 }

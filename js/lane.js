@@ -23,6 +23,9 @@ const ABS_FLOOR = 1e-6;        // absolute power gate so silence can't ratio-tri
 const FLUX_FLOOR = 1e-5;       // absolute spectral-flux gate (mean-magnitude units)
                                // so near-silent noise can't ratio-trigger the
                                // transient path; the adaptive ratio does the rest
+const BODY_FLOOR = 1e-6;       // absolute power gate for the body/integral path
+const BODY_LEAK = 0.9;         // leaky-integrator retention (~167 ms accumulation
+                               // window @60fps) for the body/sustain detector
 const WARMUP_FRAMES = 25;      // let the baseline settle before allowing fires
 
 // Envelope defaults (ms). The fast envelope is now a real time-constant follower
@@ -64,6 +67,13 @@ export class Lane {
     // flux reacts to the steepness of the attack, not absolute loudness. 0 = off
     // (energy detector only). Defaults mildly on so narrow hits register.
     this.peakBoost = cfg.peakBoost ?? 30;
+    // Body/weight (0..100). Drives a THIRD onset path based on the leaky INTEGRAL
+    // of band energy above baseline. Where peak/flux catches sharp, narrow spikes,
+    // this catches deep, sustained "dunk"/bass hits whose energy builds and decays
+    // gradually — they carry a large integral (area under the slap) even when the
+    // attack is too soft for the energy ratio and too gradual for the flux path.
+    // 0 = off; default off so it only adds fat, low hits on lanes that want them.
+    this.bodyBoost = cfg.bodyBoost ?? 0;
 
     // bounded ring of { t, level(0..1), db, onset } in chronological order
     this.history = [];
@@ -72,6 +82,7 @@ export class Lane {
     this.fast = 0;
     this.slow = 0;
     this.fluxBase = 0;      // adaptive baseline for the flux transient detector
+    this.body = 0;          // leaky integral of energy-above-baseline (body path)
     this.warm = 0;
     this.lastOnsetT = -1;
     this.onsetCount = 0;
@@ -101,6 +112,7 @@ export class Lane {
     this.fast = 0;
     this.slow = 0;
     this.fluxBase = 0;
+    this.body = 0;
     this.warm = 0;
     this.lastOnsetT = -1;
     this.onsetCount = 0;
@@ -200,9 +212,22 @@ export class Lane {
     const fluxAbove =
       peak > 0 && flux > FLUX_FLOOR && flux > fluxRatio * Math.max(this.fluxBase, FLUX_FLOOR);
 
-    // Either path can mark a hit; the refractory + edge-trigger below collapse an
-    // energy hit and a flux hit on the same stroke into a single onset.
-    const above = energyAbove || fluxAbove;
+    // Body path: a leaky INTEGRAL of band energy above baseline. Deep, sustained
+    // "dunk"/bass hits build a large accumulated area even when the attack is too
+    // soft for the energy ratio and too gradual for the flux path. We accumulate
+    // excess energy (decaying over ~167 ms) and fire when that running area clears
+    // a baseline-relative bar — so a momentary blip can't reach it, but a fat,
+    // sustained low hit does. Always integrated so toggling it on takes effect now.
+    const excess = Math.max(0, energy - Math.max(this.slow, BODY_FLOOR));
+    this.body = this.body * BODY_LEAK + excess;
+    const bodyAmt = this.bodyBoost / 100;         // 0..1
+    const bodyMult = 11 - 8 * bodyAmt;            // ~11 (picky) .. ~3 (eager)
+    const bodyAbove =
+      bodyAmt > 0 && this.body > bodyMult * Math.max(this.slow, BODY_FLOOR);
+
+    // Any path can mark a hit; the refractory + edge-trigger below collapse hits
+    // from several paths on the same stroke into a single onset.
+    const above = energyAbove || fluxAbove || bodyAbove;
 
     const tms = frame.t * 1000;
     const primed = tms - this.lastOnsetT > this.refractoryMs;
@@ -351,6 +376,7 @@ export class Lane {
       sensitivity: this.sensitivity, gainDb: this.gainDb,
       attackMs: this.attackMs, releaseMs: this.releaseMs,
       refractoryMs: this.refractoryMs, peakBoost: this.peakBoost,
+      bodyBoost: this.bodyBoost,
       centroidMinHz: this.centroidMinHz, centroidMaxHz: this.centroidMaxHz,
       audioMuted: this.audioMuted, audioSolo: this.audioSolo,
     };
